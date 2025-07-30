@@ -1,127 +1,141 @@
-# RF-DETR Object Detection with Rust
+# RF-DETR ONNX Test
 
-이 프로젝트는 Rust를 사용하여 RF-DETR (Real-time Detection Transformer) 모델을 ONNX Runtime으로 실행하는 객체 검출 애플리케이션입니다.
+RF-DETR (Real-time Detection Transformer) 객체 검출 모델을 Rust로 구현한 프로젝트입니다. ONNX Runtime을 사용하여 모델 추론을 수행하고, 콘솔 및 GUI 인터페이스를 제공합니다.
 
-## 🚀 기능
+## 주요 기능
 
-- **RF-DETR 모델**: 실시간 객체 검출을 위한 최신 Transformer 기반 모델
-- **ONNX Runtime**: 크로스 플랫폼 추론 엔진
-- **임베디드 리소스**: 모델과 샘플 이미지가 실행 파일에 포함됨
-- **바운딩 박스 시각화**: 검출된 객체에 빨간색 박스 표시
-- **COCO 클래스 지원**: 80개 COCO 객체 클래스 인식
-- **신뢰도 점수**: 각 검출에 대한 신뢰도 표시
+- **ONNX 모델 추론**: RF-DETR 모델을 사용한 실시간 객체 검출
+- **이미지 전처리**: 자동 이미지 리사이징 및 정규화
+- **바운딩 박스 시각화**: 검출된 객체에 대한 바운딩 박스 및 클래스 정보 표시
+- **다중 인터페이스**: 콘솔 모드와 GUI 모드 지원
+- **드래그 앤 드롭**: GUI에서 이미지 파일 선택 지원
 
-## 📋 요구사항
+## 설치 및 실행
 
-- Rust 1.88.0 이상
-- Windows 10/11 (테스트됨)
-- ONNX Runtime CPU 버전
+### 요구사항
 
-## 🛠️ 설치 및 실행
+- Rust 1.70+
+- Windows 10/11 (테스트된 환경)
+- ONNX Runtime CPU 버전 (자동 설치됨)
 
-### 1. 저장소 클론
+### 설치
+
 ```bash
 git clone <repository-url>
 cd rf_detr_onnx_test
+cargo build
 ```
 
-### 2. 의존성 설치
+### 실행
+
+#### 콘솔 모드 (기본)
 ```bash
-cargo build --release
+cargo run
 ```
 
-### 3. 실행
+#### GUI 모드
 ```bash
-cargo run --release
+cargo run -- --gui
 ```
 
-## 📁 프로젝트 구조
+## 프로젝트 구조
 
 ```
 rf_detr_onnx_test/
+├── src/
+│   ├── main.rs          # 메인 실행 파일 (콘솔/GUI 모드 선택)
+│   ├── lib.rs           # 핵심 라이브러리 (ONNX 추론, 이미지 처리)
+│   ├── gui.rs           # egui 기반 GUI 구현
+│   └── coco_classes.rs  # COCO 클래스 정의
 ├── assets/
 │   ├── models/
-│   │   └── rf-detr-base.onnx    # RF-DETR 모델 파일
-│   └── images/
-│       └── sample.png           # 샘플 이미지
-├── src/
-│   ├── main.rs                  # 메인 실행 파일
-│   ├── lib.rs                   # 라이브러리 코드
-│   └── coco_classes.rs          # COCO 클래스 정의
-├── Cargo.toml                   # Rust 프로젝트 설정
-└── README.md                    # 이 파일
+│   │   └── rf-detr-base.onnx  # ONNX 모델 파일
+│   ├── images/
+│   │   └── sample.png         # 샘플 이미지
+│   └── styles.css             # GUI 스타일 (사용되지 않음)
+├── Cargo.toml
+└── README.md
 ```
 
-## 🔧 주요 컴포넌트
+## 사용된 기술
 
-### 1. 객체 검출 엔진 (`src/lib.rs`)
-- `detect_objects()`: 메인 검출 함수
-- `preprocess_image()`: 이미지 전처리 (560x560 리사이즈, 정규화)
-- `parse_rf_detr_outputs()`: 모델 출력 파싱
-- `draw_detections()`: 바운딩 박스 그리기
+### 핵심 라이브러리
+- **ort**: ONNX Runtime Rust 바인딩
+- **image**: 이미지 처리 및 변환
+- **ndarray**: 다차원 배열 연산
+- **imageproc**: 이미지 처리 및 그리기
 
-### 2. COCO 클래스 시스템 (`src/coco_classes.rs`)
-- 80개 COCO 객체 클래스 정의
-- 클래스 ID와 이름 매핑
-- 신뢰도 기반 필터링
+### GUI 라이브러리
+- **egui**: 즉시 모드 GUI 프레임워크
+- **eframe**: egui 애플리케이션 프레임워크
+- **rfd**: 파일 다이얼로그
 
-### 3. 이미지 처리
-- 다양한 이미지 형식 지원 (PNG, JPG, JPEG, BMP, WebP)
+### 기타
+- **anyhow**: 에러 처리
+- **rusttype**: 폰트 렌더링 (텍스트 그리기용)
+
+## 기능 상세
+
+### 객체 검출
+- RF-DETR 모델을 사용한 80개 COCO 클래스 검출
+- 신뢰도 점수 기반 필터링
+- 바운딩 박스 좌표 추출 및 변환
+
+### 이미지 처리
+- 자동 560x560 리사이징
 - HWC → CHW 변환
 - 픽셀 값 정규화 (0-255 → 0-1)
+- 바운딩 박스 및 클래스 정보 시각화
 
-## 📊 출력 예시
+### GUI 기능
+- 직관적인 파일 선택 인터페이스
+- 실시간 이미지 처리 및 표시
+- 검출 결과 목록 표시
+- 에러 메시지 표시
 
-```
-RF-DETR Object Detection
-Loading sample image...
+## 개발 과정
 
-=== Detection Results ===
-Found 2 objects:
-1. bicycle (Confidence: 92.8%, BBox: [0.003, 0.071, 0.483, 0.992])
-2. bicycle (Confidence: 91.1%, BBox: [0.446, 0.049, 0.947, 0.988])
+### 초기 구현
+- ONNX Runtime을 사용한 기본 추론 구현
+- 이미지 전처리 및 후처리 로직 구현
+- 바운딩 박스 파싱 및 시각화
 
-Processed image saved as 'output_with_detections.png'
-```
+### GUI 구현
+- **Dioxus 시도**: API 호환성 문제로 실패
+- **egui 채택**: 안정적이고 성숙한 GUI 프레임워크
+- 파일 선택 및 이미지 표시 기능 구현
 
-## 🎯 성능 최적화
+### 최적화
+- 코드 리팩토링 및 모듈화
+- 에러 처리 개선
+- 사용자 인터페이스 개선
 
-- **Release 빌드**: `cargo run --release`로 최적화된 실행
-- **LTO (Link Time Optimization)**: 전체 프로그램 최적화
-- **단일 코드 유닛**: 컴파일 시간 최적화
-- **패닉 중단**: 오류 처리 최적화
+## 문제 해결
 
-## 🔍 기술 스택
+### ONNX Runtime 관련
+- `0xc000007b` 오류: ort 크레이트로 해결
+- 텐서 형식 불일치: 올바른 전처리 파이프라인 구현
 
-- **Rust**: 시스템 프로그래밍 언어
-- **ONNX Runtime**: 크로스 플랫폼 추론 엔진
-- **image**: 이미지 처리 라이브러리
-- **imageproc**: 이미지 처리 유틸리티
-- **ndarray**: N차원 배열 처리
-- **anyhow**: 에러 처리
+### GUI 관련
+- Dioxus API 호환성 문제: egui로 전환
+- 이미지 텍스처 로딩: ColorImage API 사용
 
-## 🚧 제한사항
+## 향후 계획
 
-- 현재 Windows 10/11에서만 테스트됨
-- GUI 버전은 개발 중 (Dioxus API 호환성 문제)
-- GPU 가속 미지원 (CPU 전용)
-
-## 🔮 향후 계획
-
-- [ ] GUI 인터페이스 추가 (Tauri 또는 Egui)
-- [ ] GPU 가속 지원
+- [ ] 드래그 앤 드롭 기능 완성
+- [ ] 배치 처리 지원
 - [ ] 실시간 비디오 처리
-- [ ] 웹 인터페이스 (WebAssembly)
-- [ ] 더 많은 모델 지원
+- [ ] 모델 성능 최적화
+- [ ] 추가 GUI 기능 (설정, 결과 저장 등)
 
-## 📝 라이선스
+## 라이선스
 
 이 프로젝트는 MIT 라이선스 하에 배포됩니다.
 
-## 🤝 기여
+## 기여
 
-버그 리포트, 기능 요청, 풀 리퀘스트를 환영합니다!
+버그 리포트, 기능 요청, 풀 리퀘스트를 환영합니다.
 
-## 📞 문의
+---
 
-프로젝트에 대한 질문이나 제안사항이 있으시면 이슈를 생성해 주세요. 
+**참고**: 이 프로젝트는 교육 및 연구 목적으로 개발되었습니다. 프로덕션 환경에서 사용하기 전에 충분한 테스트를 권장합니다. 
