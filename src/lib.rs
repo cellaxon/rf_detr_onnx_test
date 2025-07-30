@@ -17,13 +17,15 @@ const BBOX_COLOR: Rgb<u8> = Rgb([255, 0, 0]); // 빨간색
 // 임베디드 리소스
 static RF_DETR_BASE_ONNX: &[u8] = include_bytes!("../assets/models/rf-detr-base.onnx");
 
+/// 객체 검출 결과를 나타내는 구조체
 #[derive(Debug, Clone, PartialEq)]
 pub struct Detection {
-    pub bbox: [f32; 4], // [x1, y1, x2, y2]
+    pub bbox: [f32; 4], // [x1, y1, x2, y2] in normalized coordinates (0-1)
     pub confidence: f32,
     pub class: CocoClass,
 }
 
+/// 시그모이드 함수
 pub fn sigmoid(x: f32) -> f32 {
     1.0 / (1.0 + (-x).exp())
 }
@@ -77,6 +79,7 @@ fn letterbox_to_original_coords(
     ]
 }
 
+/// 이미지 전처리: 리사이징, 레터박싱, 정규화
 pub fn preprocess_image(image: &RgbImage) -> anyhow::Result<ArrayD<f32>> {
     let original_width = image.width() as f32;
     let original_height = image.height() as f32;
@@ -157,13 +160,13 @@ pub fn preprocess_image(image: &RgbImage) -> anyhow::Result<ArrayD<f32>> {
     )?)
 }
 
+/// RF-DETR 모델 출력 파싱
 pub fn parse_rf_detr_outputs(
     bbox_tensor: &ndarray::ArrayViewD<f32>,  // 바운딩 박스 좌표
     class_tensor: &ndarray::ArrayViewD<f32>, // 클래스 로짓
     original_width: u32,
     original_height: u32,
 ) -> anyhow::Result<Vec<Detection>> {
-    const CONFIDENCE_THRESHOLD: f32 = 0.5;
     const MAX_DETECTIONS: usize = 100;
 
     let mut detections = Vec::new();
@@ -217,6 +220,7 @@ pub fn parse_rf_detr_outputs(
     Ok(detections)
 }
 
+/// 검출된 객체에 바운딩 박스 그리기
 pub fn draw_detections(image: &mut RgbImage, detections: &[Detection]) {
     for detection in detections {
         let [x1, y1, x2, y2] = detection.bbox;
@@ -230,6 +234,7 @@ pub fn draw_detections(image: &mut RgbImage, detections: &[Detection]) {
     }
 }
 
+/// 메인 객체 검출 함수
 pub fn detect_objects(image_data: &[u8]) -> anyhow::Result<(Vec<Detection>, RgbImage)> {
     // 이미지 로드
     let img = ImageReader::new(std::io::Cursor::new(image_data))
