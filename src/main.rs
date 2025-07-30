@@ -1,3 +1,6 @@
+mod coco_classes;
+
+use coco_classes::CocoClass;
 use image::{ImageReader, Rgb, RgbImage};
 use imageproc::drawing::draw_hollow_rect_mut;
 use imageproc::rect::Rect;
@@ -97,9 +100,10 @@ fn main() -> anyhow::Result<()> {
     println!("총 검출된 객체 수: {}", detections.len());
     for (i, detection) in detections.iter().enumerate() {
         println!(
-            "객체 {}: 클래스={}, 신뢰도={:.3}, 바운딩박스=[{:.3}, {:.3}, {:.3}, {:.3}]",
+            "객체 {}: 클래스={} (ID: {}), 신뢰도={:.3}, 바운딩박스=[{:.3}, {:.3}, {:.3}, {:.3}]",
             i + 1,
-            detection.class_id,
+            detection.class,
+            detection.class.id(),
             detection.confidence,
             detection.bbox[0],
             detection.bbox[1],
@@ -126,7 +130,7 @@ fn main() -> anyhow::Result<()> {
 struct Detection {
     bbox: [f32; 4], // [x1, y1, x2, y2]
     confidence: f32,
-    class_id: usize,
+    class: CocoClass,
 }
 fn parse_rf_detr_outputs(
     logits: &ndarray::ArrayViewD<f32>,
@@ -170,11 +174,13 @@ fn parse_rf_detr_outputs(
                 let x2 = (cx + w / 2.0).max(0.0).min(1.0);
                 let y2 = (cy + h / 2.0).max(0.0).min(1.0);
 
-                result.push(Detection {
-                    bbox: [x1, y1, x2, y2],
-                    confidence: max_conf,
-                    class_id: best_class,
-                });
+                if let Some(class) = CocoClass::from_id(best_class) {
+                    result.push(Detection {
+                        bbox: [x1, y1, x2, y2],
+                        confidence: max_conf,
+                        class,
+                    });
+                }
 
                 println!(
                     "Detection found: class={}, conf={:.3}, bbox=[{:.3}, {:.3}, {:.3}, {:.3}]",
@@ -240,11 +246,13 @@ fn parse_rf_detr_outputs_alternative(
                         let x2 = (cx + w / 2.0).max(0.0).min(1.0);
                         let y2 = (cy + h / 2.0).max(0.0).min(1.0);
 
-                        result.push(Detection {
-                            bbox: [x1, y1, x2, y2],
-                            confidence: max_conf,
-                            class_id: best_class,
-                        });
+                        if let Some(class) = CocoClass::from_id(best_class) {
+                            result.push(Detection {
+                                bbox: [x1, y1, x2, y2],
+                                confidence: max_conf,
+                                class,
+                            });
+                        }
 
                         println!(
                             "Alt Detection: class={}, conf={:.3}, bbox=[{:.3}, {:.3}, {:.3}, {:.3}]",
@@ -270,8 +278,14 @@ fn draw_detections(image: &mut RgbImage, detections: &[Detection]) {
         let rect = Rect::at(x1, y1).of_size((x2 - x1).max(1) as u32, (y2 - y1).max(1) as u32);
         draw_hollow_rect_mut(image, rect, Rgb([255, 0, 0]));
         println!(
-            "Detection: class={}, conf={:.3}, bbox=[{}, {}, {}, {}]",
-            detection.class_id, detection.confidence, x1, y1, x2, y2
+            "Detection: class={} (ID: {}), conf={:.3}, bbox=[{}, {}, {}, {}]",
+            detection.class,
+            detection.class.id(),
+            detection.confidence,
+            x1,
+            y1,
+            x2,
+            y2
         );
     }
 }
