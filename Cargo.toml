@@ -1,0 +1,10 @@
+[package]
+name = "rf_detr_onnx_test"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+image = "0.25.6"
+ort = "1.16.0"
+ndarray = "0.15.6"
+anyhow = "1.0.98"
