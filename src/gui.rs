@@ -1,5 +1,5 @@
 use eframe::egui;
-use rf_detr_onnx_test_lib::{detect_objects, Detection};
+use rf_detr_onnx_test_lib::{detect_objects_with_model, get_model_name, Detection, ModelType};
 use std::fs;
 use std::path::PathBuf;
 
@@ -26,6 +26,8 @@ struct RfDetrApp {
     selected_image_path: Option<PathBuf>,
     processed_image: Option<egui::TextureHandle>,
     image_size: egui::Vec2,
+    inference_time_ms: Option<f64>,
+    selected_model: ModelType,
 }
 
 impl Default for RfDetrApp {
@@ -37,6 +39,8 @@ impl Default for RfDetrApp {
             selected_image_path: None,
             processed_image: None,
             image_size: egui::Vec2::ZERO,
+            inference_time_ms: None,
+            selected_model: ModelType::Original,
         }
     }
 }
@@ -57,6 +61,23 @@ impl RfDetrApp {
         ui.heading("RF-DETR Object Detection");
         ui.add_space(10.0);
 
+        // 모델 선택 드롭다운
+        ui.horizontal(|ui| {
+            ui.label("Model:");
+            egui::ComboBox::from_id_source("model_select")
+                .selected_text(get_model_name(self.selected_model))
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(&mut self.selected_model, ModelType::Original, get_model_name(ModelType::Original));
+                    ui.selectable_value(&mut self.selected_model, ModelType::FP16, get_model_name(ModelType::FP16));
+                    ui.selectable_value(&mut self.selected_model, ModelType::INT8, get_model_name(ModelType::INT8));
+                    ui.selectable_value(&mut self.selected_model, ModelType::UINT8, get_model_name(ModelType::UINT8));
+                    ui.selectable_value(&mut self.selected_model, ModelType::Quantized, get_model_name(ModelType::Quantized));
+                    ui.selectable_value(&mut self.selected_model, ModelType::Q4, get_model_name(ModelType::Q4));
+                    ui.selectable_value(&mut self.selected_model, ModelType::Q4F16, get_model_name(ModelType::Q4F16));
+                    ui.selectable_value(&mut self.selected_model, ModelType::BNB4, get_model_name(ModelType::BNB4));
+                });
+        });
+
         ui.horizontal(|ui| {
             if ui.button("📁 Select Image").clicked() && !self.is_processing {
                 self.select_image(ui.ctx());
@@ -73,6 +94,17 @@ impl RfDetrApp {
                 ));
             }
         });
+
+        // 추론 시간 표시
+        if let Some(inference_time) = self.inference_time_ms {
+            ui.horizontal(|ui| {
+                ui.label("⏱️ Inference Time:");
+                ui.colored_label(
+                    egui::Color32::from_rgb(0, 150, 255),
+                    format!("{:.2} ms", inference_time)
+                );
+            });
+        }
     }
 
     /// 에러 메시지 렌더링
@@ -162,15 +194,17 @@ impl RfDetrApp {
         self.error_message = None;
         self.processed_image = None;
         self.detections.clear();
+        self.inference_time_ms = None;
 
         // 이미지 파일 읽기
         match fs::read(&path) {
             Ok(image_data) => {
-                // 객체 검출 실행
-                match detect_objects(&image_data) {
-                    Ok((detections, result_image)) => {
-                        self.detections = detections;
-                        self.load_texture(ctx, result_image);
+                // 객체 검출 실행 (선택된 모델 사용)
+                match detect_objects_with_model(&image_data, self.selected_model) {
+                    Ok(result) => {
+                        self.detections = result.detections;
+                        self.inference_time_ms = Some(result.inference_time_ms);
+                        self.load_texture(ctx, result.result_image);
                     }
                     Err(e) => {
                         self.error_message = Some(format!("Detection error: {}", e));

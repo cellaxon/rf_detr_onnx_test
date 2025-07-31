@@ -14,8 +14,28 @@ const MODEL_INPUT_SIZE: u32 = 560;
 const CONFIDENCE_THRESHOLD: f32 = 0.5;
 const BBOX_COLOR: Rgb<u8> = Rgb([255, 0, 0]); // 빨간색
 
-// 임베디드 리소스
-static RF_DETR_BASE_ONNX: &[u8] = include_bytes!("../assets/models/rf-detr-base.onnx");
+// 모델 타입 정의
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ModelType {
+    Original,    // 원본 모델 (108 MB)
+    FP16,        // FP16 양자화 (55.2 MB)
+    INT8,        // INT8 양자화 (29.6 MB) - 호환성 문제 가능성
+    UINT8,       // UINT8 양자화 (29.6 MB)
+    Quantized,   // 일반 양자화 (29.6 MB)
+    Q4,          // 4비트 양자화 (25.3 MB)
+    Q4F16,       // 4비트 + FP16 (20.1 MB)
+    BNB4,        // BitsAndBytes 4비트 (23.8 MB)
+}
+
+// 임베디드 리소스 (모든 모델들)
+static RF_DETR_ORIGINAL_ONNX: &[u8] = include_bytes!("../assets/models/model.onnx");
+static RF_DETR_FP16_ONNX: &[u8] = include_bytes!("../assets/models/model_fp16.onnx");
+static RF_DETR_INT8_ONNX: &[u8] = include_bytes!("../assets/models/model_int8.onnx");
+static RF_DETR_UINT8_ONNX: &[u8] = include_bytes!("../assets/models/model_uint8.onnx");
+static RF_DETR_QUANTIZED_ONNX: &[u8] = include_bytes!("../assets/models/model_quantized.onnx");
+static RF_DETR_Q4_ONNX: &[u8] = include_bytes!("../assets/models/model_q4.onnx");
+static RF_DETR_Q4F16_ONNX: &[u8] = include_bytes!("../assets/models/model_q4f16.onnx");
+static RF_DETR_BNB4_ONNX: &[u8] = include_bytes!("../assets/models/model_bnb4.onnx");
 
 /// 객체 검출 결과를 나타내는 구조체
 #[derive(Debug, Clone, PartialEq)]
@@ -23,6 +43,14 @@ pub struct Detection {
     pub bbox: [f32; 4], // [x1, y1, x2, y2] in normalized coordinates (0-1)
     pub confidence: f32,
     pub class: CocoClass,
+}
+
+/// 검출 결과를 나타내는 구조체 (추론 시간 포함)
+#[derive(Debug, Clone)]
+pub struct DetectionResult {
+    pub detections: Vec<Detection>,
+    pub result_image: RgbImage,
+    pub inference_time_ms: f64,
 }
 
 /// 시그모이드 함수
@@ -234,8 +262,36 @@ pub fn draw_detections(image: &mut RgbImage, detections: &[Detection]) {
     }
 }
 
-/// 메인 객체 검출 함수
-pub fn detect_objects(image_data: &[u8]) -> anyhow::Result<(Vec<Detection>, RgbImage)> {
+/// 모델 타입에 따른 모델 데이터 반환
+fn get_model_data(model_type: ModelType) -> anyhow::Result<&'static [u8]> {
+    match model_type {
+        ModelType::Original => Ok(RF_DETR_ORIGINAL_ONNX),
+        ModelType::FP16 => Ok(RF_DETR_FP16_ONNX),
+        ModelType::INT8 => Ok(RF_DETR_INT8_ONNX),
+        ModelType::UINT8 => Ok(RF_DETR_UINT8_ONNX),
+        ModelType::Quantized => Ok(RF_DETR_QUANTIZED_ONNX),
+        ModelType::Q4 => Ok(RF_DETR_Q4_ONNX),
+        ModelType::Q4F16 => Ok(RF_DETR_Q4F16_ONNX),
+        ModelType::BNB4 => Ok(RF_DETR_BNB4_ONNX),
+    }
+}
+
+/// 모델 타입에 따른 모델 이름 반환
+pub fn get_model_name(model_type: ModelType) -> &'static str {
+    match model_type {
+        ModelType::Original => "RF-DETR Original (108 MB)",
+        ModelType::FP16 => "RF-DETR FP16 (55.2 MB)",
+        ModelType::INT8 => "RF-DETR INT8 (29.6 MB)",
+        ModelType::UINT8 => "RF-DETR UINT8 (29.6 MB)",
+        ModelType::Quantized => "RF-DETR Quantized (29.6 MB)",
+        ModelType::Q4 => "RF-DETR Q4 (25.3 MB)",
+        ModelType::Q4F16 => "RF-DETR Q4F16 (20.1 MB)",
+        ModelType::BNB4 => "RF-DETR BNB4 (23.8 MB)",
+    }
+}
+
+/// 메인 객체 검출 함수 (모델 타입 지정)
+pub fn detect_objects_with_model(image_data: &[u8], model_type: ModelType) -> anyhow::Result<DetectionResult> {
     // 이미지 로드
     let img = ImageReader::new(std::io::Cursor::new(image_data))
         .with_guessed_format()?
@@ -246,18 +302,28 @@ pub fn detect_objects(image_data: &[u8]) -> anyhow::Result<(Vec<Detection>, RgbI
     let environment = Arc::new(
         Environment::builder()
             .with_name("rf-detr-embedded")
+            .with_log_level(ort::LoggingLevel::Warning)
             .build()?,
     );
 
-    let session = SessionBuilder::new(&environment)?.with_model_from_memory(RF_DETR_BASE_ONNX)?;
+    // 모델 타입에 따른 모델 로드
+    let model_data = get_model_data(model_type)?;
+    let session = SessionBuilder::new(&environment)?.with_model_from_memory(model_data)?;
 
     // 이미지 전처리
     let input_array = preprocess_image(&img)?;
     let cow_array = CowArray::from(&input_array);
     let input_value = Value::from_array(session.allocator(), &cow_array)?;
 
+    // 추론 시간 측정 시작
+    let start_time = std::time::Instant::now();
+
     // 추론 실행
     let outputs = session.run(vec![input_value])?;
+
+    // 추론 시간 측정 종료
+    let inference_time = start_time.elapsed();
+    let inference_time_ms = inference_time.as_secs_f64() * 1000.0;
 
     // 결과 파싱
     let mut detections = Vec::new();
@@ -276,5 +342,14 @@ pub fn detect_objects(image_data: &[u8]) -> anyhow::Result<(Vec<Detection>, RgbI
     let mut result_image = img.clone();
     draw_detections(&mut result_image, &detections);
 
-    Ok((detections, result_image))
+    Ok(DetectionResult {
+        detections,
+        result_image,
+        inference_time_ms,
+    })
+}
+
+/// 메인 객체 검출 함수 (기본 모델 사용)
+pub fn detect_objects(image_data: &[u8]) -> anyhow::Result<DetectionResult> {
+    detect_objects_with_model(image_data, ModelType::Original)
 }
