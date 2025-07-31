@@ -24,10 +24,43 @@ RF-DETR (Real-time Detection Transformer) 객체 검출 모델을 Rust로 구현
 
 ### 설치
 
+#### 1. ONNX Runtime 설치
 ```bash
 pip install onnxruntime
+```
+
+#### 2. 프로젝트 클론
+```bash
 git clone https://github.com/cellaxon/rf_detr_onnx_test
 cd rf_detr_onnx_test
+```
+
+#### 3. 모델 다운로드
+
+프로젝트를 실행하기 전에 RF-DETR 모델을 다운로드해야 합니다:
+
+1. [Hugging Face RF-DETR ONNX 모델 페이지](https://huggingface.co/onnx-community/rfdetr_base-ONNX/tree/main/onnx)에 접속
+2. `model.onnx` 파일을 다운로드 (108 MB)
+3. 다운로드한 파일을 `assets/models/` 폴더에 `model.onnx` 이름으로 저장
+
+```bash
+# assets/models 폴더 생성 (없는 경우)
+mkdir -p assets/models
+
+# 모델 파일을 assets/models/model.onnx로 이동
+mv ~/Downloads/model.onnx assets/models/
+```
+
+**동작 가능한 모델** (macOS M4에서 테스트됨):
+- ✅ **원본 모델** (`model.onnx`, 108 MB): 가장 빠른 추론 속도
+- ✅ **FP16 모델** (`model_fp16.onnx`, 55.2 MB): 메모리 절약하지만 느림
+- ❌ **INT8/UINT8 모델**: `ConvInteger` 연산자 미지원으로 동작 불가
+- ❌ **4비트 양자화 모델**: `MatMulNBits` 연산자 미지원으로 동작 불가
+
+**성능 비교** (macOS M4 기준): 원본 모델이 FP16 모델보다 약 18% 빠른 추론 속도를 보입니다 (426ms vs 502ms).
+
+#### 4. 프로젝트 빌드
+```bash
 cargo build
 ```
 
