@@ -1,4 +1,3 @@
-
 use image::{ImageReader, Rgb, RgbImage};
 use imageproc::drawing::draw_hollow_rect_mut;
 use imageproc::rect::Rect;
@@ -330,8 +329,6 @@ pub fn draw_detections(image: &mut RgbImage, detections: &[Detection]) {
     }
 }
 
-
-
 /// 모델 세션을 캐시하는 구조체
 pub struct ModelCache {
     environment: Arc<Environment>,
@@ -356,6 +353,7 @@ impl ModelCache {
 
     pub fn get_session(&mut self) -> anyhow::Result<&ort::InMemorySession<'static>> {
         if self.session.is_none() {
+            #[cfg(target_os = "macos")]
             let session = SessionBuilder::new(&self.environment)?
                 .with_execution_providers([
                     ExecutionProvider::CoreML(CoreMLExecutionProviderOptions {
@@ -366,23 +364,35 @@ impl ModelCache {
                     ExecutionProvider::CPU(CPUExecutionProviderOptions::default()),
                 ])?
                 // 1. 최적화 레벨 조정 (성능 vs 초기화 시간)
-                .with_optimization_level(ort::GraphOptimizationLevel::Level1)? // Level3 → Level1
-                
+                .with_optimization_level(ort::GraphOptimizationLevel::Level1)?
                 // 2. 스레드 설정 최적화 (M4 Mac 기준)
-                .with_intra_threads(4)?  // M4 성능 코어 개수
-                .with_inter_threads(2)?  // 병렬 실행용
-                .with_parallel_execution(false)?  // RF-DETR는 순차 실행이 더 빠름
-                
+                .with_intra_threads(4)? // M4 성능 코어 개수
+                .with_inter_threads(2)? // 병렬 실행용
+                .with_parallel_execution(false)? // RF-DETR는 순차 실행이 더 빠름
                 // 3. 메모리 최적화
-                .with_memory_pattern(true)?  // 고정 입력 크기라면 활성화
-                .with_allocator(ort::AllocatorType::Device)?  // GPU 메모리 사용
-                
+                .with_memory_pattern(true)? // 고정 입력 크기라면 활성화
+                .with_allocator(ort::AllocatorType::Device)? // GPU 메모리 사용
                 .with_model_from_memory(RF_DETR_ORIGINAL_ONNX)?;
-            
+            #[cfg(not(target_os = "macos"))]
+            let session = SessionBuilder::new(&self.environment)?
+                .with_execution_providers([ExecutionProvider::CPU(
+                    CPUExecutionProviderOptions::default(),
+                )])?
+                // 1. 최적화 레벨 조정 (성능 vs 초기화 시간)
+                .with_optimization_level(ort::GraphOptimizationLevel::Level1)?
+                // 2. 스레드 설정 최적화 (M4 Mac 기준)
+                .with_intra_threads(16)? // M4 성능 코어 개수
+                .with_inter_threads(8)? // 병렬 실행용
+                .with_parallel_execution(false)? // RF-DETR는 순차 실행이 더 빠름
+                // 3. 메모리 최적화
+                .with_memory_pattern(true)? // 고정 입력 크기라면 활성화
+                .with_allocator(ort::AllocatorType::Device)? // GPU 메모리 사용
+                .with_model_from_memory(RF_DETR_ORIGINAL_ONNX)?;
+
             self.session = Some(session);
             println!("Loading model: RF-DETR Original (108 MB) - Optimized for M4");
         }
-        
+
         match self.session.as_ref() {
             Some(session) => Ok(session),
             None => Err(anyhow::anyhow!("Model session is not initialized")),
@@ -398,8 +408,8 @@ impl ModelCache {
 
 /// 메인 객체 검출 함수 (캐시 사용)
 pub fn detect_objects_with_cache(
-    image_data: &[u8], 
-    cache: &mut ModelCache
+    image_data: &[u8],
+    cache: &mut ModelCache,
 ) -> anyhow::Result<DetectionResult> {
     // 이미지 로드
     let img = ImageReader::new(std::io::Cursor::new(image_data))
