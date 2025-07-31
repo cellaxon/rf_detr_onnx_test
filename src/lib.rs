@@ -6,7 +6,8 @@ use imageproc::drawing::draw_hollow_rect_mut;
 use imageproc::rect::Rect;
 use ndarray::CowArray;
 use ndarray::{ArrayD, IxDyn};
-use ort::{Environment, SessionBuilder, Value};
+use ort::execution_providers::{CPUExecutionProviderOptions, CoreMLExecutionProviderOptions};
+use ort::{Environment, ExecutionProvider, SessionBuilder, Value};
 use std::sync::Arc;
 
 // 상수 정의
@@ -308,7 +309,12 @@ pub fn detect_objects_with_model(image_data: &[u8], model_type: ModelType) -> an
 
     // 모델 타입에 따른 모델 로드
     let model_data = get_model_data(model_type)?;
-    let session = SessionBuilder::new(&environment)?.with_model_from_memory(model_data)?;
+    let session = SessionBuilder::new(&environment)?
+    .with_execution_providers([
+        ExecutionProvider::CoreML(CoreMLExecutionProviderOptions::default()),  // CoreML EP 활성화
+        ExecutionProvider::CPU(CPUExecutionProviderOptions::default()),     // 백업
+    ])?
+    .with_optimization_level(ort::GraphOptimizationLevel::Level3)?.with_model_from_memory(model_data)?;
 
     // 이미지 전처리
     let input_array = preprocess_image(&img)?;
