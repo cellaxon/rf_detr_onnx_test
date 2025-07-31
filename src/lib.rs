@@ -371,7 +371,10 @@ impl ModelCache {
             println!("Loading model: RF-DETR Original (108 MB)");
         }
         
-        Ok(self.session.as_ref().unwrap())
+        match self.session.as_ref() {
+            Some(session) => Ok(session),
+            None => Err(anyhow::anyhow!("Model session is not initialized")),
+        }
     }
 
     /// 모델을 미리 로드

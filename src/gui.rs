@@ -10,12 +10,13 @@ pub fn run_gui() {
         ..Default::default()
     };
 
-    eframe::run_native(
+    if let Err(e) = eframe::run_native(
         "RF-DETR Object Detection",
         options,
         Box::new(|_cc| Ok(Box::new(RfDetrApp::default()))),
-    )
-    .unwrap();
+    ) {
+        eprintln!("GUI 실행 오류: {e}");
+    }
 }
 
 /// RF-DETR GUI 애플리케이션 구조체
@@ -90,10 +91,10 @@ impl RfDetrApp {
             }
 
             if let Some(path) = &self.selected_image_path {
-                ui.label(format!(
-                    "Selected: {}",
-                    path.file_name().unwrap().to_string_lossy()
-                ));
+                let file_name = path.file_name()
+                    .map(|f| f.to_string_lossy())
+                    .unwrap_or_else(|| "<unknown>".into());
+                ui.label(format!("Selected: {}", file_name));
             }
         });
 
