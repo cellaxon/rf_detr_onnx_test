@@ -46,11 +46,21 @@ impl Default for RfDetrApp {
 }
 
 impl eframe::App for RfDetrApp {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // 좌측 사이드 패널 (검출 결과)
+        egui::SidePanel::left("detections_panel")
+            .resizable(false)
+            .default_width(400.0)
+            .width_range(400.0..=400.0)
+            .show(ctx, |ui| {
+                self.render_header(ui);
+                self.render_error_message(ui);
+                self.render_detections_panel(ui);
+            });
+
+        // 중앙 패널 (이미지)
         egui::CentralPanel::default().show(ctx, |ui| {
-            self.render_header(ui);
-            self.render_error_message(ui);
-            self.render_main_content(ui);
+            self.render_image_panel(ui);
         });
     }
 }
@@ -70,8 +80,8 @@ impl RfDetrApp {
             );
         });
 
-        ui.horizontal(|ui| {
-            if ui.button("📁 Select Image").clicked() && !self.is_processing {
+        ui.vertical(|ui| {
+            if ui.add_sized(egui::vec2(380.0, 40.0), egui::Button::new("📁 Select Image")).clicked() && !self.is_processing {
                 self.select_image(ui.ctx());
             }
 
@@ -107,29 +117,29 @@ impl RfDetrApp {
         ui.add_space(10.0);
     }
 
-    /// 메인 콘텐츠 영역 렌더링
-    fn render_main_content(&self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
-            self.render_detections_panel(ui);
-            ui.separator();
-            self.render_image_panel(ui);
-        });
-    }
-
     /// 검출 결과 패널 렌더링
     fn render_detections_panel(&self, ui: &mut egui::Ui) {
-        ui.vertical(|ui| {
-            ui.set_min_width(300.0);
-            ui.heading(format!("Detections ({})", self.detections.len()));
-
-            if self.detections.is_empty() {
-                ui.label("No detections yet. Select an image to get started.");
-            } else {
-                for (i, detection) in self.detections.iter().enumerate() {
-                    self.render_detection_item(ui, i, detection);
+        ui.heading(format!("Detections ({})", self.detections.len()));
+        let available_height = ui.available_height();
+        
+        // 스크롤 가능한 영역 생성
+        egui::ScrollArea::vertical()
+            .id_salt("scroll_area_detections")
+            .max_height(available_height) // 헤더 공간 제외
+            .show(ui, |ui| {
+                if self.detections.is_empty() {
+                    ui.vertical_centered(|ui| {
+                        ui.add_space(50.0);
+                        ui.label("No detections yet.");
+                        ui.label("Select an image to get started.");
+                    });
+                } else {
+                    for (i, detection) in self.detections.iter().enumerate() {
+                        self.render_detection_item(ui, i, detection);
+                        ui.add_space(5.0);
+                    }
                 }
-            }
-        });
+            });
     }
 
     /// 개별 검출 결과 아이템 렌더링
@@ -147,16 +157,21 @@ impl RfDetrApp {
 
     /// 이미지 패널 렌더링
     fn render_image_panel(&self, ui: &mut egui::Ui) {
-        ui.vertical(|ui| {
-            ui.set_min_width(400.0);
+        ui.heading("Processed Image");
+        let available_height = ui.available_height();
 
-            if let Some(texture) = &self.processed_image {
-                ui.heading("Processed Image");
-                ui.image(texture);
-            } else {
-                self.render_empty_image_placeholder(ui);
-            }
-        });
+        // 스크롤 가능한 영역 생성
+        egui::ScrollArea::both()
+            .id_salt("scroll_area_image")
+            .max_height(available_height) // 헤더 공간 제외
+            .show(ui, |ui| {
+                if let Some(texture) = &self.processed_image {
+                    // 이미지 표시 (egui가 자동으로 스케일링)
+                    ui.image(texture);
+                } else {
+                    self.render_empty_image_placeholder(ui);
+                }
+            });
     }
 
     /// 빈 이미지 플레이스홀더 렌더링
