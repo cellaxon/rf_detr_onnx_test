@@ -13,8 +13,6 @@ const MODEL_INPUT_SIZE: u32 = 560;
 const CONFIDENCE_THRESHOLD: f32 = 0.5;
 const BBOX_COLOR: Rgb<u8> = Rgb([255, 0, 0]); // 빨간색
 
-
-
 // 임베디드 리소스 (원본 모델만)
 static RF_DETR_ORIGINAL_ONNX: &[u8] = include_bytes!("../assets/models/model.onnx");
 
@@ -356,19 +354,33 @@ impl ModelCache {
         })
     }
 
-    /// 모델 세션 가져오기 (캐시에 없으면 로드)
     pub fn get_session(&mut self) -> anyhow::Result<&ort::InMemorySession<'static>> {
         if self.session.is_none() {
             let session = SessionBuilder::new(&self.environment)?
                 .with_execution_providers([
-                    ExecutionProvider::CoreML(CoreMLExecutionProviderOptions::default()),
+                    ExecutionProvider::CoreML(CoreMLExecutionProviderOptions {
+                        use_cpu_only: false,
+                        enable_on_subgraph: true,
+                        only_enable_device_with_ane: true, // M4 ANE 활용
+                    }),
                     ExecutionProvider::CPU(CPUExecutionProviderOptions::default()),
                 ])?
-                .with_optimization_level(ort::GraphOptimizationLevel::Level3)?
+                // 1. 최적화 레벨 조정 (성능 vs 초기화 시간)
+                .with_optimization_level(ort::GraphOptimizationLevel::Level1)? // Level3 → Level1
+                
+                // 2. 스레드 설정 최적화 (M4 Mac 기준)
+                .with_intra_threads(4)?  // M4 성능 코어 개수
+                .with_inter_threads(2)?  // 병렬 실행용
+                .with_parallel_execution(false)?  // RF-DETR는 순차 실행이 더 빠름
+                
+                // 3. 메모리 최적화
+                .with_memory_pattern(true)?  // 고정 입력 크기라면 활성화
+                .with_allocator(ort::AllocatorType::Device)?  // GPU 메모리 사용
+                
                 .with_model_from_memory(RF_DETR_ORIGINAL_ONNX)?;
             
             self.session = Some(session);
-            println!("Loading model: RF-DETR Original (108 MB)");
+            println!("Loading model: RF-DETR Original (108 MB) - Optimized for M4");
         }
         
         match self.session.as_ref() {
