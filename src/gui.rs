@@ -1,5 +1,5 @@
 use eframe::egui;
-use rf_detr_onnx_test_lib::{detect_objects_with_model, get_model_name, Detection, ModelType};
+use rf_detr_onnx_test_lib::{detect_objects_with_cache, Detection, ModelCache};
 use std::fs;
 use std::path::PathBuf;
 
@@ -27,7 +27,7 @@ struct RfDetrApp {
     processed_image: Option<egui::TextureHandle>,
     image_size: egui::Vec2,
     inference_time_ms: Option<f64>,
-    selected_model: ModelType,
+    model_cache: Option<ModelCache>,
 }
 
 impl Default for RfDetrApp {
@@ -40,7 +40,7 @@ impl Default for RfDetrApp {
             processed_image: None,
             image_size: egui::Vec2::ZERO,
             inference_time_ms: None,
-            selected_model: ModelType::Original,
+            model_cache: None,
         }
     }
 }
@@ -61,21 +61,13 @@ impl RfDetrApp {
         ui.heading("RF-DETR Object Detection");
         ui.add_space(10.0);
 
-        // 모델 선택 드롭다운
+        // 모델 정보 표시
         ui.horizontal(|ui| {
             ui.label("Model:");
-            egui::ComboBox::from_id_source("model_select")
-                .selected_text(get_model_name(self.selected_model))
-                .show_ui(ui, |ui| {
-                    ui.selectable_value(&mut self.selected_model, ModelType::Original, get_model_name(ModelType::Original));
-                    ui.selectable_value(&mut self.selected_model, ModelType::FP16, get_model_name(ModelType::FP16));
-                    ui.selectable_value(&mut self.selected_model, ModelType::INT8, get_model_name(ModelType::INT8));
-                    ui.selectable_value(&mut self.selected_model, ModelType::UINT8, get_model_name(ModelType::UINT8));
-                    ui.selectable_value(&mut self.selected_model, ModelType::Quantized, get_model_name(ModelType::Quantized));
-                    ui.selectable_value(&mut self.selected_model, ModelType::Q4, get_model_name(ModelType::Q4));
-                    ui.selectable_value(&mut self.selected_model, ModelType::Q4F16, get_model_name(ModelType::Q4F16));
-                    ui.selectable_value(&mut self.selected_model, ModelType::BNB4, get_model_name(ModelType::BNB4));
-                });
+            ui.colored_label(
+                egui::Color32::from_rgb(0, 150, 255),
+                "RF-DETR Original (108 MB)"
+            );
         });
 
         ui.horizontal(|ui| {
@@ -144,7 +136,7 @@ impl RfDetrApp {
     fn render_detection_item(&self, ui: &mut egui::Ui, index: usize, detection: &Detection) {
         ui.group(|ui| {
             ui.heading(format!("Detection #{}", index + 1));
-            ui.label(format!("Class: {}", detection.class));
+            ui.label(format!("Class: {} (ID: {})", detection.class_name, detection.class_id));
             ui.label(format!("Confidence: {:.1}%", detection.confidence * 100.0));
             ui.label(format!(
                 "BBox: [{:.3}, {:.3}, {:.3}, {:.3}]",
@@ -199,15 +191,31 @@ impl RfDetrApp {
         // 이미지 파일 읽기
         match fs::read(&path) {
             Ok(image_data) => {
-                // 객체 검출 실행 (선택된 모델 사용)
-                match detect_objects_with_model(&image_data, self.selected_model) {
-                    Ok(result) => {
-                        self.detections = result.detections;
-                        self.inference_time_ms = Some(result.inference_time_ms);
-                        self.load_texture(ctx, result.result_image);
+                // 모델 캐시 초기화 (필요한 경우)
+                if self.model_cache.is_none() {
+                    match ModelCache::new() {
+                        Ok(cache) => {
+                            self.model_cache = Some(cache);
+                            println!("Model cache initialized");
+                        }
+                        Err(e) => {
+                            self.error_message = Some(format!("Failed to initialize model cache: {}", e));
+                            return;
+                        }
                     }
-                    Err(e) => {
-                        self.error_message = Some(format!("Detection error: {}", e));
+                }
+
+                // 객체 검출 실행 (캐시된 모델 사용)
+                if let Some(cache) = &mut self.model_cache {
+                    match detect_objects_with_cache(&image_data, cache) {
+                        Ok(result) => {
+                            self.detections = result.detections;
+                            self.inference_time_ms = Some(result.inference_time_ms);
+                            self.load_texture(ctx, result.result_image);
+                        }
+                        Err(e) => {
+                            self.error_message = Some(format!("Detection error: {}", e));
+                        }
                     }
                 }
             }

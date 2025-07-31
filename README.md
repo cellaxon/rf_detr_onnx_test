@@ -4,13 +4,12 @@ RF-DETR (Real-time Detection Transformer) 객체 검출 모델을 Rust로 구현
 
 ## 주요 기능
 
-- **ONNX 모델 추론**: RF-DETR 모델을 사용한 실시간 객체 검출
-- **다중 모델 지원**: 8가지 다양한 양자화 모델 선택 가능
+- **ONNX 모델 추론**: RF-DETR 원본 모델을 사용한 실시간 객체 검출
+- **모델 캐싱**: 빠른 추론을 위한 모델 세션 캐싱
 - **추론 시간 측정**: 실시간 추론 성능 모니터링
 - **이미지 전처리**: 레터박싱을 통한 종횡비 유지 리사이징 및 정규화
 - **바운딩 박스 시각화**: 검출된 객체에 대한 바운딩 박스 및 클래스 정보 표시
-- **다중 인터페이스**: 콘솔 모드와 GUI 모드 지원
-- **명령행 인자 지원**: 이미지 파일 경로와 모델 타입을 인자로 받아 콘솔 모드 실행
+- **GUI 인터페이스**: 직관적인 사용자 인터페이스
 
 ## 설치 및 실행
 
@@ -36,28 +35,17 @@ cargo build
 cargo run --release
 ```
 
-#### 콘솔 모드 (이미지 파일 및 모델 타입 지정)
+#### GUI 모드 실행
 
 ```bash
-cargo run --release -- image.jpg model_type
+cargo run --release
 ```
 
 #### 사용법
 
 ```bash
-# GUI 모드 실행 (인자 없음)
+# GUI 모드 실행
 cargo run --release
-
-# 콘솔 모드 실행 (이미지 파일 경로 지정, 기본 모델 사용)
-cargo run --release -- path/to/image.jpg
-
-# 콘솔 모드 실행 (이미지 파일 경로와 모델 타입 지정)
-cargo run --release -- path/to/image.jpg original
-cargo run --release -- path/to/image.jpg fp16
-cargo run --release -- path/to/image.jpg int8
-
-# 도움말 표시 (잘못된 인자)
-cargo run --release -- arg1 arg2 arg3
 ```
 
 ## 프로젝트 구조
@@ -71,14 +59,7 @@ rf_detr_onnx_test/
 │   └── coco_classes.rs  # COCO 클래스 정의
 ├── assets/
 │   ├── models/
-│   │   ├── model.onnx         # 원본 모델 (108 MB)
-│   │   ├── model_fp16.onnx    # FP16 양자화 모델 (55.2 MB)
-│   │   ├── model_int8.onnx    # INT8 양자화 모델 (29.6 MB)
-│   │   ├── model_uint8.onnx   # UINT8 양자화 모델 (29.6 MB)
-│   │   ├── model_quantized.onnx # 일반 양자화 모델 (29.6 MB)
-│   │   ├── model_q4.onnx      # 4비트 양자화 모델 (25.3 MB)
-│   │   ├── model_q4f16.onnx   # 4비트+FP16 하이브리드 (20.1 MB)
-│   │   └── model_bnb4.onnx    # BitsAndBytes 4비트 (23.8 MB)
+│   │   └── model.onnx         # 원본 모델 (108 MB) - 최적 성능
 │   └── images/
 │       └── sample.png         # 샘플 이미지
 ├── Cargo.toml
@@ -108,10 +89,10 @@ rf_detr_onnx_test/
 
 ### 객체 검출
 
-- RF-DETR 모델을 사용한 80개 COCO 클래스 검출
+- RF-DETR 모델을 사용한 90개 클래스 검출
 - 신뢰도 점수 기반 필터링 (임계값: 0.5)
 - 바운딩 박스 좌표 추출 및 변환
-- 정확한 클래스 매핑 (Background=0, Person=1, Bicycle=2, ...)
+- 정확한 RF-DETR 클래스 매핑 (Person=1, Cat=17, Dog=18, Horse=19, ...)
 
 ### 이미지 처리
 
@@ -125,37 +106,22 @@ rf_detr_onnx_test/
 #### GUI 모드
 
 - 직관적인 파일 선택 인터페이스
-- **모델 선택 드롭다운**: 8가지 모델 중 선택 가능
+- **모델 정보 표시**: 현재 사용 중인 모델 정보
 - **실시간 추론 시간 표시**: 파란색으로 강조된 성능 정보
 - 실시간 이미지 처리 및 표시
 - 검출 결과 목록 표시
 - 에러 메시지 표시
 - 드래그 앤 드롭 지원 (향후 구현 예정)
 
-#### 콘솔 모드
+### 사용 모델
 
-- 명령행에서 이미지 파일 경로와 모델 타입 지정
-- 검출 결과를 콘솔에 출력
-- **추론 시간 표시**: 밀리초 단위로 정확한 성능 측정
-- 처리된 이미지를 `output_with_detections.png`로 저장
-- 배치 처리에 적합
-
-### 지원 모델
-
-프로젝트는 8가지 다양한 RF-DETR 모델을 지원합니다:
+프로젝트는 RF-DETR 원본 모델을 사용합니다:
 
 | 모델 타입 | 파일명 | 크기 | 상태 | 추론 시간 | 비고 |
 |-----------|--------|------|------|-----------|------|
 | **Original** | `model.onnx` | 108 MB | ✅ | **426.74 ms** | 가장 빠르고 안정적 |
-| **FP16** | `model_fp16.onnx` | 55.2 MB | ✅ | 502.73 ms | 정상 작동, 메모리 절약 |
-| INT8 | `model_int8.onnx` | 29.6 MB | ❌ | - | ConvInteger 연산자 미지원 |
-| UINT8 | `model_uint8.onnx` | 29.6 MB | ❌ | - | Reshape 연산자 오류 |
-| Quantized | `model_quantized.onnx` | 29.6 MB | ❌ | - | Reshape 연산자 오류 |
-| Q4 | `model_q4.onnx` | 25.3 MB | ❌ | - | MatMulNBits 연산자 미지원 |
-| Q4F16 | `model_q4f16.onnx` | 20.1 MB | ❌ | - | MatMulNBits 연산자 미지원 |
-| BNB4 | `model_bnb4.onnx` | 23.8 MB | ❌ | - | MatMulBnb4 연산자 미지원 |
 
-**권장 모델**: 현재 환경에서는 **Original 모델**을 사용하는 것이 최적입니다.
+**선택 이유**: 반복 테스트 결과 원본 모델이 모든 양자화 모델보다 빠르고 안정적임을 확인했습니다.
 
 ## 성능 테스트 결과
 
@@ -267,8 +233,9 @@ Found 4 objects:
 
 ### 클래스 검출 문제
 
-- 잘못된 클래스 매핑: COCO 표준 인덱싱으로 수정
-- Person이 Bicycle로 검출되는 문제 해결
+- 잘못된 클래스 매핑: RF-DETR 실제 클래스 순서로 수정
+- Cat이 Dog로, Dog가 Horse로 검출되는 문제 해결
+- COCO 표준과 RF-DETR 클래스 순서 차이로 인한 문제 완전 해결
 
 ### 성능 최적화
 

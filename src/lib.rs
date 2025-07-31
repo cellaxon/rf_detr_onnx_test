@@ -1,6 +1,4 @@
-pub mod coco_classes;
 
-use coco_classes::CocoClass;
 use image::{ImageReader, Rgb, RgbImage};
 use imageproc::drawing::draw_hollow_rect_mut;
 use imageproc::rect::Rect;
@@ -15,35 +13,18 @@ const MODEL_INPUT_SIZE: u32 = 560;
 const CONFIDENCE_THRESHOLD: f32 = 0.5;
 const BBOX_COLOR: Rgb<u8> = Rgb([255, 0, 0]); // 빨간색
 
-// 모델 타입 정의
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum ModelType {
-    Original,    // 원본 모델 (108 MB)
-    FP16,        // FP16 양자화 (55.2 MB)
-    INT8,        // INT8 양자화 (29.6 MB) - 호환성 문제 가능성
-    UINT8,       // UINT8 양자화 (29.6 MB)
-    Quantized,   // 일반 양자화 (29.6 MB)
-    Q4,          // 4비트 양자화 (25.3 MB)
-    Q4F16,       // 4비트 + FP16 (20.1 MB)
-    BNB4,        // BitsAndBytes 4비트 (23.8 MB)
-}
 
-// 임베디드 리소스 (모든 모델들)
+
+// 임베디드 리소스 (원본 모델만)
 static RF_DETR_ORIGINAL_ONNX: &[u8] = include_bytes!("../assets/models/model.onnx");
-static RF_DETR_FP16_ONNX: &[u8] = include_bytes!("../assets/models/model_fp16.onnx");
-static RF_DETR_INT8_ONNX: &[u8] = include_bytes!("../assets/models/model_int8.onnx");
-static RF_DETR_UINT8_ONNX: &[u8] = include_bytes!("../assets/models/model_uint8.onnx");
-static RF_DETR_QUANTIZED_ONNX: &[u8] = include_bytes!("../assets/models/model_quantized.onnx");
-static RF_DETR_Q4_ONNX: &[u8] = include_bytes!("../assets/models/model_q4.onnx");
-static RF_DETR_Q4F16_ONNX: &[u8] = include_bytes!("../assets/models/model_q4f16.onnx");
-static RF_DETR_BNB4_ONNX: &[u8] = include_bytes!("../assets/models/model_bnb4.onnx");
 
 /// 객체 검출 결과를 나타내는 구조체
 #[derive(Debug, Clone, PartialEq)]
 pub struct Detection {
     pub bbox: [f32; 4], // [x1, y1, x2, y2] in normalized coordinates (0-1)
     pub confidence: f32,
-    pub class: CocoClass,
+    pub class_id: u32,
+    pub class_name: String,
 }
 
 /// 검출 결과를 나타내는 구조체 (추론 시간 포함)
@@ -57,6 +38,93 @@ pub struct DetectionResult {
 /// 시그모이드 함수
 pub fn sigmoid(x: f32) -> f32 {
     1.0 / (1.0 + (-x).exp())
+}
+
+/// RF-DETR 클래스 ID를 클래스 이름으로 변환
+fn rf_detr_id_to_label(class_id: u32) -> Option<&'static str> {
+    match class_id {
+        1 => Some("person"),
+        2 => Some("bicycle"),
+        3 => Some("car"),
+        4 => Some("motorcycle"),
+        5 => Some("airplane"),
+        6 => Some("bus"),
+        7 => Some("train"),
+        8 => Some("truck"),
+        9 => Some("boat"),
+        10 => Some("traffic light"),
+        11 => Some("fire hydrant"),
+        13 => Some("stop sign"),
+        14 => Some("parking meter"),
+        15 => Some("bench"),
+        16 => Some("bird"),
+        17 => Some("cat"),
+        18 => Some("dog"),
+        19 => Some("horse"),
+        20 => Some("sheep"),
+        21 => Some("cow"),
+        22 => Some("elephant"),
+        23 => Some("bear"),
+        24 => Some("zebra"),
+        25 => Some("giraffe"),
+        27 => Some("backpack"),
+        28 => Some("umbrella"),
+        31 => Some("handbag"),
+        32 => Some("tie"),
+        33 => Some("suitcase"),
+        34 => Some("frisbee"),
+        35 => Some("skis"),
+        36 => Some("snowboard"),
+        37 => Some("sports ball"),
+        38 => Some("kite"),
+        39 => Some("baseball bat"),
+        40 => Some("baseball glove"),
+        41 => Some("skateboard"),
+        42 => Some("surfboard"),
+        43 => Some("tennis racket"),
+        44 => Some("bottle"),
+        46 => Some("wine glass"),
+        47 => Some("cup"),
+        48 => Some("fork"),
+        49 => Some("knife"),
+        50 => Some("spoon"),
+        51 => Some("bowl"),
+        52 => Some("banana"),
+        53 => Some("apple"),
+        54 => Some("sandwich"),
+        55 => Some("orange"),
+        56 => Some("broccoli"),
+        57 => Some("carrot"),
+        58 => Some("hot dog"),
+        59 => Some("pizza"),
+        60 => Some("donut"),
+        61 => Some("cake"),
+        62 => Some("chair"),
+        63 => Some("couch"),
+        64 => Some("potted plant"),
+        65 => Some("bed"),
+        67 => Some("dining table"),
+        70 => Some("toilet"),
+        72 => Some("tv"),
+        73 => Some("laptop"),
+        74 => Some("mouse"),
+        75 => Some("remote"),
+        76 => Some("keyboard"),
+        77 => Some("cell phone"),
+        78 => Some("microwave"),
+        79 => Some("oven"),
+        80 => Some("toaster"),
+        81 => Some("sink"),
+        82 => Some("refrigerator"),
+        84 => Some("book"),
+        85 => Some("clock"),
+        86 => Some("vase"),
+        87 => Some("scissors"),
+        88 => Some("teddy bear"),
+        89 => Some("hair drier"),
+        90 => Some("toothbrush"),
+        _ => None,
+    }
 }
 
 /// 레터박싱 좌표를 원본 이미지 좌표로 변환
@@ -235,11 +303,12 @@ pub fn parse_rf_detr_outputs(
                 let original_bbox =
                     letterbox_to_original_coords([x1, y1, x2, y2], original_width, original_height);
 
-                if let Some(class) = CocoClass::from_id(best_class) {
+                if let Some(class_name) = rf_detr_id_to_label(best_class as u32) {
                     detections.push(Detection {
                         bbox: original_bbox,
                         confidence: max_conf,
-                        class,
+                        class_id: best_class as u32,
+                        class_name: class_name.to_string(),
                     });
                 }
             }
@@ -263,58 +332,68 @@ pub fn draw_detections(image: &mut RgbImage, detections: &[Detection]) {
     }
 }
 
-/// 모델 타입에 따른 모델 데이터 반환
-fn get_model_data(model_type: ModelType) -> anyhow::Result<&'static [u8]> {
-    match model_type {
-        ModelType::Original => Ok(RF_DETR_ORIGINAL_ONNX),
-        ModelType::FP16 => Ok(RF_DETR_FP16_ONNX),
-        ModelType::INT8 => Ok(RF_DETR_INT8_ONNX),
-        ModelType::UINT8 => Ok(RF_DETR_UINT8_ONNX),
-        ModelType::Quantized => Ok(RF_DETR_QUANTIZED_ONNX),
-        ModelType::Q4 => Ok(RF_DETR_Q4_ONNX),
-        ModelType::Q4F16 => Ok(RF_DETR_Q4F16_ONNX),
-        ModelType::BNB4 => Ok(RF_DETR_BNB4_ONNX),
+
+
+/// 모델 세션을 캐시하는 구조체
+pub struct ModelCache {
+    environment: Arc<Environment>,
+    session: Option<ort::InMemorySession<'static>>,
+}
+
+impl ModelCache {
+    /// 새로운 모델 캐시 생성
+    pub fn new() -> anyhow::Result<Self> {
+        let environment = Arc::new(
+            Environment::builder()
+                .with_name("rf-detr-embedded")
+                .with_log_level(ort::LoggingLevel::Warning)
+                .build()?,
+        );
+
+        Ok(Self {
+            environment,
+            session: None,
+        })
+    }
+
+    /// 모델 세션 가져오기 (캐시에 없으면 로드)
+    pub fn get_session(&mut self) -> anyhow::Result<&ort::InMemorySession<'static>> {
+        if self.session.is_none() {
+            let session = SessionBuilder::new(&self.environment)?
+                .with_execution_providers([
+                    ExecutionProvider::CoreML(CoreMLExecutionProviderOptions::default()),
+                    ExecutionProvider::CPU(CPUExecutionProviderOptions::default()),
+                ])?
+                .with_optimization_level(ort::GraphOptimizationLevel::Level3)?
+                .with_model_from_memory(RF_DETR_ORIGINAL_ONNX)?;
+            
+            self.session = Some(session);
+            println!("Loading model: RF-DETR Original (108 MB)");
+        }
+        
+        Ok(self.session.as_ref().unwrap())
+    }
+
+    /// 모델을 미리 로드
+    pub fn preload_model(&mut self) -> anyhow::Result<()> {
+        self.get_session()?;
+        Ok(())
     }
 }
 
-/// 모델 타입에 따른 모델 이름 반환
-pub fn get_model_name(model_type: ModelType) -> &'static str {
-    match model_type {
-        ModelType::Original => "RF-DETR Original (108 MB)",
-        ModelType::FP16 => "RF-DETR FP16 (55.2 MB)",
-        ModelType::INT8 => "RF-DETR INT8 (29.6 MB)",
-        ModelType::UINT8 => "RF-DETR UINT8 (29.6 MB)",
-        ModelType::Quantized => "RF-DETR Quantized (29.6 MB)",
-        ModelType::Q4 => "RF-DETR Q4 (25.3 MB)",
-        ModelType::Q4F16 => "RF-DETR Q4F16 (20.1 MB)",
-        ModelType::BNB4 => "RF-DETR BNB4 (23.8 MB)",
-    }
-}
-
-/// 메인 객체 검출 함수 (모델 타입 지정)
-pub fn detect_objects_with_model(image_data: &[u8], model_type: ModelType) -> anyhow::Result<DetectionResult> {
+/// 메인 객체 검출 함수 (캐시 사용)
+pub fn detect_objects_with_cache(
+    image_data: &[u8], 
+    cache: &mut ModelCache
+) -> anyhow::Result<DetectionResult> {
     // 이미지 로드
     let img = ImageReader::new(std::io::Cursor::new(image_data))
         .with_guessed_format()?
         .decode()?
         .to_rgb8();
 
-    // ONNX Runtime 환경 생성
-    let environment = Arc::new(
-        Environment::builder()
-            .with_name("rf-detr-embedded")
-            .with_log_level(ort::LoggingLevel::Warning)
-            .build()?,
-    );
-
-    // 모델 타입에 따른 모델 로드
-    let model_data = get_model_data(model_type)?;
-    let session = SessionBuilder::new(&environment)?
-    .with_execution_providers([
-        ExecutionProvider::CoreML(CoreMLExecutionProviderOptions::default()),  // CoreML EP 활성화
-        ExecutionProvider::CPU(CPUExecutionProviderOptions::default()),     // 백업
-    ])?
-    .with_optimization_level(ort::GraphOptimizationLevel::Level3)?.with_model_from_memory(model_data)?;
+    // 캐시된 세션 가져오기
+    let session = cache.get_session()?;
 
     // 이미지 전처리
     let input_array = preprocess_image(&img)?;
@@ -340,7 +419,7 @@ pub fn detect_objects_with_model(image_data: &[u8], model_type: ModelType) -> an
         let logits_view = logits_tensor.view();
         let boxes_view = boxes_tensor.view();
 
-        // RF-DETR 출력 파싱 (boxes가 클래스 로짓, logits가 바운딩 박스)
+        // RF-DETR 출력 파싱
         detections = parse_rf_detr_outputs(&logits_view, &boxes_view, img.width(), img.height())?;
     }
 
@@ -357,5 +436,7 @@ pub fn detect_objects_with_model(image_data: &[u8], model_type: ModelType) -> an
 
 /// 메인 객체 검출 함수 (기본 모델 사용)
 pub fn detect_objects(image_data: &[u8]) -> anyhow::Result<DetectionResult> {
-    detect_objects_with_model(image_data, ModelType::Original)
+    // ModelCache를 생성하여 사용
+    let mut cache = ModelCache::new()?;
+    detect_objects_with_cache(image_data, &mut cache)
 }
